@@ -1,0 +1,9 @@
+README.md
+setup.py
+pwnhelper/__init__.py
+pwnhelper/debugger.py
+pwnhelper.egg-info/PKG-INFO
+pwnhelper.egg-info/SOURCES.txt
+pwnhelper.egg-info/dependency_links.txt
+pwnhelper.egg-info/requires.txt
+pwnhelper.egg-info/top_level.txt
