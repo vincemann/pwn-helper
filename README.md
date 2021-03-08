@@ -12,4 +12,5 @@ this should not throw an error
 from pwnhelper.debugger import *  
 binary = "/opt/phoenix/i486/format-four"  
 dbg = Debugger(binary)  
-```
+```  
+see [this](https://github.com/vincemann/exploit-education_phoenix-solutions/blob/main/pwntools/format4.py) example script  
