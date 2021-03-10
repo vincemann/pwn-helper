@@ -118,7 +118,9 @@ class Debugger:
         self.cp.breakpoints.append(t)
         self.gdb.execute("b *" + t)
 
-    # returns false if program crashed
+    # call this when you want to receive data and suspect a crash
+    # returns (data, crashed_bool)
+    # returns (data,False) if program crashed
     def crash_recv(self, timeout=1):
         r = self.io.recv(timeout=timeout)
         if r is b"":
