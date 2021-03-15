@@ -1,4 +1,3 @@
-
 r"""
     Call this, when you suspect that your exploit works and you should have a shell now.
 
@@ -31,3 +30,4 @@ def check_for_shell(io, recv_check_timeout=0.1, always_recvs=False, control_text
     except EOFError:
         print("EOF -> no shell, pipe closed or segfault?")
         return False
+
