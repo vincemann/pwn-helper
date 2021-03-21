@@ -24,7 +24,6 @@ class Debugger:
     def __start_session(self):
         self.io = pwnlib.gdb.debug([self.binary], api=True)
         self.gdb = self.io.gdb
-        self.elf = ELF(self.binary)
         self.cp = Checkpoint.new()
 
     def __init_context(self):
