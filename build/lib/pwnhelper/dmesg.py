@@ -30,6 +30,9 @@ class SegfaultReport:
             return self.raw == other.raw
         return False
 
+    def __str__(self):
+        return self.raw
+
 
 class Dmesg:
     def __init__(self, session):
