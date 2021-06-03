@@ -53,7 +53,6 @@ cover/
 
 
 .idea/
-.idea/**
 # Translations
 *.mo
 *.pot
@@ -111,7 +110,7 @@ celerybeat.pid
 .env
 .venv
 env/
-venv/**
+venv/
 ENV/
 env.bak/
 venv.bak/
