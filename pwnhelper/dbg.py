@@ -231,6 +231,11 @@ class Debugger:
         else:
             return False
 
+    # call i.E. after go_to or go_into
+    def finish_function(self):
+        self.execute("finish")
+        self.wait()
+
     def send(self, input):
         self.cp.sent.append(input)
         self.io.send(input)
