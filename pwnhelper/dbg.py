@@ -144,7 +144,7 @@ class Debugger:
             n_target_adr = adr + (i * 4)
             s_target_adr = hex(n_target_adr)
             v = Debugger.value_of_ex(self.execute("x/1wx" + s_target_adr))
-            log.info(f"examining dword at adr: {s_target_adr} with value {pad_num_to_hex(v)}")
+            log.info(f"examining dword at adr: {s_target_adr} with value {pad_num_to_hex32(v)}")
             values.append(v)
             adressses.append(n_target_adr)
         if len(values) == 1:
@@ -152,7 +152,7 @@ class Debugger:
         adr_value_map = {}
         for i in range(len(adressses)):
             adr_value_map[adressses[i]] = values[i]
-        return values
+        return adr_value_map
 
     def execute(self, expr, to_string=True):
         return self.gdb.execute(expr, to_string=to_string)
