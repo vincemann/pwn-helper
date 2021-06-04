@@ -42,6 +42,7 @@ class Debugger:
     # -> base pointer will be of called function
     # -> stack frame will be the one of called function
     # return methods stack frame
+    # does not always work
     def go_into(self, function):
         self.go_to(function)
         return self.move_into_function()
@@ -52,7 +53,7 @@ class Debugger:
     def move_into_function(self):
         while True:
             instruction = self.execute("x/1i$" + self._arch_letter() + "ip")
-            log.info(f"instruction: {instruction}")
+            # log.info(f"instruction: {instruction}")
             self.gdb.execute("next")
             self.wait()
             if \

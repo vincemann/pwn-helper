@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 setup(
     name='pwnhelper',
     packages=find_packages(include=['pwnhelper']),
-    version='0.1.32',
+    version='0.1.35',
     description='helper lib for pwntools',
     author='vincemann',
     license='MIT',
