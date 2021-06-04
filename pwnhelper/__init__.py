@@ -1,3 +1,5 @@
+from pwn import *
+
 r"""
     Call this, when you suspect that your exploit works and you should have a shell now.
 
@@ -31,3 +33,6 @@ def check_for_shell(io, recv_check_timeout=0.1, always_recvs=False, control_text
         print("EOF -> no shell, pipe closed or segfault?")
         return False
 
+
+def pad_num_to_hex(value):
+    return "0x" + hex(value).replace("0x", "").zfill((int)((context.word_size/8)*2))

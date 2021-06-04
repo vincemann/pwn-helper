@@ -1,4 +1,5 @@
 from pwn import *
+from pwnhelper import *
 
 
 class Checkpoint:
@@ -88,34 +89,69 @@ class Debugger:
         hex_string = examine_output.split(":")[1].strip()
         return int(hex_string, 16)
 
+    # returns adr: value mapping {int,int}
+    # if amount words = 1 only value {int} is returned
     def examine(self, adr, amount_words=1):
         values = []
+        adressses = []
         for i in range(0, amount_words):
             if context.bits == 32:
-                values.append(Debugger.value_of_ex(self.execute("x/1wx" + hex(adr+(i*context.word_size)))))
+                n_target_adr = adr + (i * ((int)(context.word_size / 8)))
+                s_target_adr = hex(n_target_adr)
+                v = Debugger.value_of_ex(self.execute("x/1wx" + s_target_adr))
+                log.info(f"examining dword at adr: {s_target_adr} with value {pad_num_to_hex(v)}")
+                values.append(v)
+                adressses.append(n_target_adr)
             else:
-                values.append(Debugger.value_of_ex(self.execute("x/1gx" + hex(adr+(i*context.word_size)))))
+                n_target_adr = adr + (i * ((int)(context.word_size / 8)))
+                s_target_adr = hex(n_target_adr)
+                v = Debugger.value_of_ex(self.execute("x/1gx" + s_target_adr))
+                log.info(f"examining qword at adr: {s_target_adr} with value {pad_num_to_hex(v)}")
+                values.append(v)
+                adressses.append(n_target_adr)
         if len(values) == 1:
             return values[0]
-        return values
+        adr_value_map = {}
+        for i in range(len(adressses)):
+            adr_value_map[adressses[i]] = values[i]
+        return adr_value_map
 
+    # see examine
     def examine_string(self, adr, amount_strings=1):
         values = []
+        adressses = []
         strings_off = 0
         for i in range(0, amount_strings):
-            s = self.execute("x/1s" + hex(adr + (i+strings_off)))
+            n_target_adr = adr + (i+strings_off)
+            s_target_adr = hex(n_target_adr)
+            s = self.execute("x/1s" + s_target_adr)
+            log.info(f"examining string at adr: {s_target_adr} with value {s}")
             strings_off += len(s)
             values.append(s)
+            adressses.append(n_target_adr)
         if len(values) == 1:
             return values[0]
-        return values
+        adr_value_map = {}
+        for i in range(len(adressses)):
+            adr_value_map[adressses[i]] = values[i]
+        return adr_value_map
 
+    # see examine, force reading 32 bit words
     def examine32(self, adr, amount_words=1):
         values = []
+        adressses = []
         for i in range(0, amount_words):
-            values.append(Debugger.value_of_ex(self.execute("x/1wx" + hex(adr + (i * 4)))))
+            n_target_adr = adr + (i * 4)
+            s_target_adr = hex(n_target_adr)
+            v = Debugger.value_of_ex(self.execute("x/1wx" + s_target_adr))
+            log.info(f"examining dword at adr: {s_target_adr} with value {pad_num_to_hex(v)}")
+            values.append(v)
+            adressses.append(n_target_adr)
         if len(values) == 1:
             return values[0]
+        adr_value_map = {}
+        for i in range(len(adressses)):
+            adr_value_map[adressses[i]] = values[i]
         return values
 
     def execute(self, expr, to_string=True):
