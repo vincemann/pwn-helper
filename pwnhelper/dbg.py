@@ -14,18 +14,10 @@ class Checkpoint:
         return Checkpoint(self.sent.copy(), self.breakpoints.copy())
 
 
-def _arch_letter():
-    if "32" in context.arch:
-        return "e"
-    if "64" in context.arch:
-        return "r"
-    raise Exception("Unknown arch")
-
-
 class Debugger:
 
-    def __init__(self, binary, process_list, env=None):
-        self.binary = binary
+    def __init__(self, process_list, env=None):
+        self.binary = process_list[0]
         self.process_list = process_list
         self.__init_context()
         self.__start_session(env)
@@ -44,6 +36,7 @@ class Debugger:
     def go_to(self, function):
         self.breakpoint(function)
         self.gdb.continue_and_wait()
+        self.remove_last_bp()
 
     # break after push bp, mov bp,sp
     # -> base pointer will be of called function
@@ -51,13 +44,42 @@ class Debugger:
     # return methods stack frame
     def go_into(self, function):
         self.go_to(function)
+        return self.move_into_function()
+
+    # see go_into
+    # can be called after go_to to end up at same spot as go_into
+    # can be useful for args fetching
+    def move_into_function(self):
         while True:
-            instruction = self.gdb.execute("x/1i$" + _arch_letter() + "ip", to_string=True)
+            instruction = self.execute("x/1i$" + self._arch_letter() + "ip")
+            log.info(f"instruction: {instruction}")
             self.gdb.execute("next")
-            self.gdb.wait()
-            if "mov" in instruction and _arch_letter() + "bp" and _arch_letter() + "sp" in instruction:
+            self.wait()
+            if \
+                    ("mov" in instruction)\
+                    and (self._arch_letter() + "bp" in instruction) \
+                    and (self._arch_letter() + "sp" in instruction):
                 break
         return self.gdb.selected_frame()
+
+    def wait(self):
+        self.gdb.wait()
+
+    def read_base_pointer(self):
+        return self.read_register(self._arch_letter()+"bp")
+
+    def read_instruction_pointer(self):
+        return self.read_register(self._arch_letter()+"ip")
+
+    def remove_last_bp(self):
+        # bp_info = self.execute("info breakpoints")
+        # bp_lines = bp_info.split("\n")
+        # last_bp_line = bp_lines[len(bp_lines) - 1]
+        # log.info("removing bp: " + last_bp_line )
+        # #+ " with number: " + str(bp_number)
+        # bp_number = int(last_bp_line[0])
+        bp_num = len(self.cp.breakpoints)
+        self.execute("del "+str(bp_num))
 
     # extract hex value from gdb examine output
     @staticmethod
@@ -67,26 +89,32 @@ class Debugger:
 
     def examine(self, adr, amount_words=1):
         values = []
-        for i in range(1, amount_words):
-            if self.__getBits() == 32:
-                values.append(Debugger.value_of_ex(self.gdb.execute("x/1wx" + hex(adr+(i*context.word_size)), to_string=True)))
+        for i in range(0, amount_words):
+            if context.bits == 32:
+                values.append(Debugger.value_of_ex(self.execute("x/1wx" + hex(adr+(i*context.word_size)))))
             else:
-                values.append(Debugger.value_of_ex(self.gdb.execute("x/1gx" + hex(adr+(i*context.word_size)), to_string=True)))
+                values.append(Debugger.value_of_ex(self.execute("x/1gx" + hex(adr+(i*context.word_size)))))
+        if len(values) == 1:
+            return values[0]
         return values
 
     def examine_string(self, adr, amount_strings=1):
         values = []
         strings_off = 0
-        for i in range(1, amount_strings):
-            s = self.gdb.execute("x/1s" + hex(adr + (i+strings_off)), to_string=True)
+        for i in range(0, amount_strings):
+            s = self.execute("x/1s" + hex(adr + (i+strings_off)))
             strings_off += len(s)
             values.append(s)
+        if len(values) == 1:
+            return values[0]
         return values
 
     def examine32(self, adr, amount_words=1):
         values = []
-        for i in range(1, amount_words):
-            values.append(Debugger.value_of_ex(self.gdb.execute("x/1wx" + hex(adr + (i * 4)), to_string=True)))
+        for i in range(0, amount_words):
+            values.append(Debugger.value_of_ex(self.execute("x/1wx" + hex(adr + (i * 4)))))
+        if len(values) == 1:
+            return values[0]
         return values
 
     def execute(self, expr, to_string=True):
@@ -102,19 +130,25 @@ class Debugger:
     # -> need to be halted at first instruction of function
     # only finds args one word big
     def find_args(self, offsets):
-        bits = self.__getBits()
-        if bits == 32:
+        if context.bits == 32:
             return self.__find_args32(offsets)
         else:
             return self.__find_args64(offsets)
+
+    @staticmethod
+    def _arch_letter():
+        if context.bits == 32:
+            return "e"
+        if context.bits == 64:
+            return "r"
 
     def __find_args32(self, offsets):
         args = []
         frame = self.gdb.selected_frame()
         esp = int(frame.read_register("esp"))
         for off in offsets:
-            # dont need +4 to skip return address, bc frame.read_register does that smh for me
-            arg = self.examine(esp + off*context.word_size)
+            # +4 to skip ret adr
+            arg = self.examine((esp+4) + off*context.word_size)
             args.append(arg)
         if len(args) == 1:
             return args[0]
@@ -129,7 +163,8 @@ class Debugger:
             if off <= len(arg_registers):
                 args.append(frame.read_register(arg_registers[off]))
             else:
-                arg = self.examine(rsp + (off-6) * context.word_size)
+                # wordsize is 8
+                arg = self.examine((rsp+8) + (off-len(arg_registers)) * context.word_size)
                 args.append(arg)
                 # raise Exception("More than 6 args are still unsupported for 64 bit ")
         if len(args) == 1:
@@ -151,7 +186,7 @@ class Debugger:
             return self.__has_crashed()
 
     def __has_crashed(self):
-        r = self.gdb.execute("bt", to_string=True)
+        r = self.execute("bt")
         # print("has crashed report")
         # print(r)
         if "printf_core" in r:
@@ -172,6 +207,9 @@ class Debugger:
         if type(target) == int:
             t = hex(target)
         log.info("break at: " + t)
+        # log.info(f"temporary: {temporary}")
+        # bp = gdb.Breakpoint(target, temporary=temporary)
+        # log.info(f"bp object: {bp}")
         self.cp.breakpoints.append(t)
         self.gdb.execute("b *" + t)
 
@@ -192,7 +230,7 @@ class Debugger:
     def checkpoint(self, breakpoint=False):
         # save bp at current pos
         if breakpoint:
-            eip = self.read_register(_arch_letter() + "ip")
+            eip = self.read_register(self._arch_letter() + "ip")
             self.breakpoint(eip)
         return self.cp.clone()
 
@@ -207,7 +245,7 @@ class Debugger:
         self.cp = checkpoint.clone()
 
     def __restore_soft(self, method, breakpoints, sent):
-        self.gdb.execute("set $" + _arch_letter() + "ip=*" + method)
+        self.gdb.execute("set $" + self._arch_letter() + "ip=*" + method)
         # disable all breakpoints except last
         self.gdb.execute("disable breakpoints")
         self.gdb.execute("enable " + str(len(breakpoints)))
@@ -216,14 +254,6 @@ class Debugger:
         self.__continue_until_sent(sent)
         self.gdb.execute("enable breakpoints")
         self.io.clean(timeout=0)
-
-    @staticmethod
-    def __getBits():
-        if "32" in context.arch:
-            return 32
-        if "64" in context.arch:
-            return 64
-        raise Exception("Unknown arch")
 
     def __continue_until_sent(self, sent):
         self.gdb.continue_nowait()
@@ -235,7 +265,7 @@ class Debugger:
         if self.io.can_recv():
             print(self.io.recv())
 
-        self.gdb.wait()
+        self.wait()
 
     def restore_hard(self, checkpoint):
         log.info("restoring checkpoint hard")

@@ -1,8 +1,8 @@
 README.md
 setup.py
 pwnhelper/__init__.py
+pwnhelper/dbg.py
 pwnhelper/dmesg.py
-pwnhelper/gdb.py
 pwnhelper.egg-info/PKG-INFO
 pwnhelper.egg-info/SOURCES.txt
 pwnhelper.egg-info/dependency_links.txt
