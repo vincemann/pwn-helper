@@ -36,8 +36,18 @@ class Debugger:
     # stack frame will still be the one of calling function
     def go_to(self, function):
         self.breakpoint(function)
-        self.gdb.continue_and_wait()
+        self.continue_and_wait()
         self.remove_last_bp()
+
+    # maybe you want
+    # dbg.send(bytes_to_send)
+    # before this call
+    # halts the debugger after finishing the function
+    def goto_and_finish(self, function):
+        self.breakpoint(function)
+        self.continue_and_wait()
+        self.finish_function()
+        self.wait()
 
     # break after push bp, mov bp,sp
     # -> base pointer will be of called function
@@ -48,19 +58,25 @@ class Debugger:
         self.go_to(function)
         return self.move_into_function()
 
+    def continue_and_wait(self):
+        self.gdb.continue_and_wait()
+
+    def continue_nowait(self):
+        self.gdb.continue_nowait()
+
     # see go_into
     # can be called after go_to to end up at same spot as go_into
     # can be useful for args fetching
     def move_into_function(self):
         while True:
-            instruction = self.execute("x/1i$" + self._arch_letter() + "ip")
+            instruction = self.execute("x/1i$" + self.__arch_letter() + "ip")
             # log.info(f"instruction: {instruction}")
             self.gdb.execute("next")
             self.wait()
             if \
                     ("mov" in instruction)\
-                    and (self._arch_letter() + "bp" in instruction) \
-                    and (self._arch_letter() + "sp" in instruction):
+                    and (self.__arch_letter() + "bp" in instruction) \
+                    and (self.__arch_letter() + "sp" in instruction):
                 break
         return self.gdb.selected_frame()
 
@@ -68,10 +84,13 @@ class Debugger:
         self.gdb.wait()
 
     def read_base_pointer(self):
-        return self.read_register(self._arch_letter()+"bp")
+        return self.read_register(self.__arch_letter() + "bp")
 
     def read_instruction_pointer(self):
-        return self.read_register(self._arch_letter()+"ip")
+        return self.read_register(self.__arch_letter() + "ip")
+
+    def read_stack_pointer(self):
+        return self.read_register(self.__arch_letter() + "sp")
 
     def remove_last_bp(self):
         # bp_info = self.execute("info breakpoints")
@@ -91,33 +110,37 @@ class Debugger:
 
     # returns adr: value mapping {int,int}
     # if amount words = 1 only value {int} is returned
-    def examine(self, adr, amount_words=1):
+    def examine_words(self, adr, amount_words=1):
         values = []
         adressses = []
         for i in range(0, amount_words):
-            if context.bits == 32:
-                n_target_adr = adr + (i * ((int)(context.word_size / 8)))
-                s_target_adr = hex(n_target_adr)
-                v = Debugger.value_of_ex(self.execute("x/1wx" + s_target_adr))
-                log.info(f"examining dword at adr: {s_target_adr} with value {pad_num_to_hex(v)}")
-                values.append(v)
-                adressses.append(n_target_adr)
-            else:
-                n_target_adr = adr + (i * ((int)(context.word_size / 8)))
-                s_target_adr = hex(n_target_adr)
-                v = Debugger.value_of_ex(self.execute("x/1gx" + s_target_adr))
-                log.info(f"examining qword at adr: {s_target_adr} with value {pad_num_to_hex(v)}")
-                values.append(v)
-                adressses.append(n_target_adr)
+            v, target_adr = self.__examine_single_word(adr, i)
+            values.append(v)
+            adressses.append(target_adr)
         if len(values) == 1:
             return values[0]
-        adr_value_map = {}
+        # merge to dict
+        adr_value_dict = {}
         for i in range(len(adressses)):
-            adr_value_map[adressses[i]] = values[i]
-        return adr_value_map
+            adr_value_dict[adressses[i]] = values[i]
+        return adr_value_dict
+
+    def __examine_single_word(self, adr, word_num, force_32_bit=False):
+        if force_32_bit:
+            n_target_adr = adr + (word_num * ((int)(32 / 8)))
+        else:
+            n_target_adr = adr + (word_num * ((int)(context.word_size / 8)))
+        s_target_adr = hex(n_target_adr)
+        if (context.bits == 32) or force_32_bit:
+            v = Debugger.value_of_ex(self.execute("x/1wx" + s_target_adr))
+            log.debug(f"examining dword at adr: {s_target_adr} with value {pad_num_to_hex(v)}")
+        else:
+            v = Debugger.value_of_ex(self.execute("x/1gx" + s_target_adr))
+            log.debug(f"examining qword at adr: {s_target_adr} with value {pad_num_to_hex(v)}")
+        return n_target_adr, v
 
     # see examine
-    def examine_string(self, adr, amount_strings=1):
+    def examine_strings(self, adr, amount_strings=1):
         values = []
         adressses = []
         strings_off = 0
@@ -125,7 +148,7 @@ class Debugger:
             n_target_adr = adr + (i+strings_off)
             s_target_adr = hex(n_target_adr)
             s = self.execute("x/1s" + s_target_adr)
-            log.info(f"examining string at adr: {s_target_adr} with value {s}")
+            log.debug(f"examining string at adr: {s_target_adr} with value {s}")
             strings_off += len(s)
             values.append(s)
             adressses.append(n_target_adr)
@@ -141,12 +164,9 @@ class Debugger:
         values = []
         adressses = []
         for i in range(0, amount_words):
-            n_target_adr = adr + (i * 4)
-            s_target_adr = hex(n_target_adr)
-            v = Debugger.value_of_ex(self.execute("x/1wx" + s_target_adr))
-            log.info(f"examining dword at adr: {s_target_adr} with value {pad_num_to_hex32(v)}")
+            v, target_adr = self.__examine_single_word(adr, i, force_32_bit=True)
             values.append(v)
-            adressses.append(n_target_adr)
+            adressses.append(target_adr)
         if len(values) == 1:
             return values[0]
         adr_value_map = {}
@@ -157,53 +177,54 @@ class Debugger:
     def execute(self, expr, to_string=True):
         return self.gdb.execute(expr, to_string=to_string)
 
-    def recv(self, numb=None):
-        return self.io.recv(numb=numb)
+    def recv(self, numb=None, timeout=Timeout.default):
+        return self.io.recv(numb=numb, timeout=timeout)
 
-    def recvall(self):
-        return self.io.recvall()
+    def recvall(self, timeout=Timeout.forever):
+        return self.io.recvall(timeout=timeout)
 
-    # call break_at func or go_to(func) before this function
-    # -> need to be halted at first instruction of function
-    # only finds args one word big
-    def find_args(self, offsets):
-        if context.bits == 32:
-            return self.__find_args32(offsets)
-        else:
-            return self.__find_args64(offsets)
 
     @staticmethod
-    def _arch_letter():
+    def __arch_letter():
         if context.bits == 32:
             return "e"
         if context.bits == 64:
             return "r"
 
-    def __find_args32(self, offsets):
+    # todo create function that accepts dict for args with diff size of one word
+    # call break_at func or go_to(func) before this function
+    # -> need to be halted at first instruction of function
+    # only finds args one word big
+    def find_args(self, offsets):
+        if context.bits == 32:
+            return self.find_args32(offsets)
+        else:
+            return self.__find_args64(offsets)
+
+    def find_args32(self, arg_numbers):
         args = []
-        frame = self.gdb.selected_frame()
-        esp = int(frame.read_register("esp"))
-        for off in offsets:
+        esp = self.read_stack_pointer()
+        for arg_num in arg_numbers:
             # +4 to skip ret adr
-            arg = self.examine((esp+4) + off*context.word_size)
+            arg = self.examine_words((esp + 4) + (arg_num * 4))
             args.append(arg)
         if len(args) == 1:
             return args[0]
         return args
 
-    def __find_args64(self, offsets):
+    def __find_args64(self, arg_numbers):
         args = []
         arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
         frame = self.gdb.selected_frame()
         rsp = int(frame.read_register("rsp"))
-        for off in offsets:
-            if off <= len(arg_registers):
-                args.append(frame.read_register(arg_registers[off]))
+        for arg_num in arg_numbers:
+            if arg_num < len(arg_registers):
+                args.append(frame.read_register(arg_registers[arg_num]))
             else:
-                # wordsize is 8
-                arg = self.examine((rsp+8) + (off-len(arg_registers)) * context.word_size)
+                # search on stack
+                # +8 to skip ret adr
+                arg = self.examine_words((rsp + 8) + ((arg_num - len(arg_registers)) * 8))
                 args.append(arg)
-                # raise Exception("More than 6 args are still unsupported for 64 bit ")
         if len(args) == 1:
             return args[0]
         return args
@@ -231,6 +252,20 @@ class Debugger:
         else:
             return False
 
+    # todo not working correctly for 64 bit, maybe check if something got returned at all when timeout is hit
+    # call this if you want to receive data and suspect a crash
+    # returns (data, crashed_bool)
+    # returns (data,False) if program did not crash
+    def crash_recv(self, timeout=1):
+        r = self.io.recv(timeout=timeout)
+        if r is b"":
+            # program cant return emtpy string -> must have timed out
+            log.warn("receiving time out when receiving, could be crash")
+        crashed = self.has_crashed()
+        if crashed:
+            return r, True
+        return r, False
+
     # call i.E. after go_to or go_into
     def finish_function(self):
         self.execute("finish")
@@ -255,24 +290,11 @@ class Debugger:
         self.cp.breakpoints.append(t)
         self.gdb.execute("b *" + t)
 
-    # call this if you want to receive data and suspect a crash
-    # returns (data, crashed_bool)
-    # returns (data,False) if program did not crash
-    def crash_recv(self, timeout=1):
-        r = self.io.recv(timeout=timeout)
-        if r is b"":
-            # program cant return emtpy string -> must have timed out
-            log.warn("receiving time out when receiving, could be crash")
-        crashed = self.has_crashed()
-        if crashed:
-            return r, True
-        return r, False
-
     # breakpoint=True -> create breakpoint at current ip before creating cp
     def checkpoint(self, breakpoint=False):
         # save bp at current pos
         if breakpoint:
-            eip = self.read_register(self._arch_letter() + "ip")
+            eip = self.read_register(self.__arch_letter() + "ip")
             self.breakpoint(eip)
         return self.cp.clone()
 
@@ -287,7 +309,7 @@ class Debugger:
         self.cp = checkpoint.clone()
 
     def __restore_soft(self, method, breakpoints, sent):
-        self.gdb.execute("set $" + self._arch_letter() + "ip=*" + method)
+        self.gdb.execute("set $" + self.__arch_letter() + "ip=*" + method)
         # disable all breakpoints except last
         self.gdb.execute("disable breakpoints")
         self.gdb.execute("enable " + str(len(breakpoints)))
