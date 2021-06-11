@@ -46,14 +46,21 @@ def pad_num_to_hex64(value):
     return "0x" + hex(value).replace("0x", "").zfill((int)((64/8)*2))
 
 
-def print_examine_data(dict):
+def print_examine_word_data(dict):
     adrss = list(dict.keys())
     values = list(dict.values())
     for i in range(len(adrss)):
         log.info(f"adr: {pad_num_to_hex(adrss[i])} ->  {pad_num_to_hex(values[i])}")
 
 
-def print_examine_data32(dict):
+def print_examine_data(dict):
+    adrss = list(dict.keys())
+    values = list(dict.values())
+    for i in range(len(adrss)):
+        log.info(f"adr: {(pad_num_to_hex(adrss[i]))} ->  {(values[i])}")
+
+
+def print_examine_word_data32(dict):
     adrss = list(dict.keys())
     values = list(dict.values())
     for i in range(len(adrss)):

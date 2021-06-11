@@ -2,6 +2,8 @@ from pwn import *
 from pwnhelper import *
 
 
+
+
 class Checkpoint:
     def __init__(self, sent, breakpoints):
         self.sent = sent
@@ -39,15 +41,18 @@ class Debugger:
         self.continue_and_wait()
         self.remove_last_bp()
 
-    # maybe you want
-    # dbg.send(bytes_to_send)
-    # before this call
+    # maybe you want:
+    # 1. dbg.send(bytes_to_send) before this call
+    # or
+    # 2. dbg.recv() after this call
+    #
     # halts the debugger after finishing the function
     def goto_and_finish(self, function):
         self.breakpoint(function)
         self.continue_and_wait()
         self.finish_function()
-        self.wait()
+        self.remove_last_bp()
+        # self.wait()
 
     # break after push bp, mov bp,sp
     # -> base pointer will be of called function
@@ -63,6 +68,32 @@ class Debugger:
 
     def continue_nowait(self):
         self.gdb.continue_nowait()
+
+    # returns dict: i.E.:
+    # {"default" : 0x123, "plt" : 0x7427, ...}
+    def find_function_adrs(self, function_name):
+        result = {}
+        keys = ["default", "plt", "got"]
+        lines = self.execute("info functions -q " + function_name)
+
+        s_adrs = []
+        # remove bs
+        for s_adr in lines.split("\n"):
+            if s_adr.startswith("0x"):
+                s_adrs.append(s_adr)
+        # remove duplicates
+        s_adrs = list(set(s_adrs))
+        for s_adr in s_adrs:
+            adr = s_adr.split(" ")[0].strip()
+            adr = int(adr, 16)
+            index = 0
+            if "plt" in s_adr:
+                index = 1
+            if "got" in s_adr:
+                index = 2
+            result[keys[index]] = adr
+        return result
+
 
     # see go_into
     # can be called after go_to to end up at same spot as go_into
@@ -114,7 +145,7 @@ class Debugger:
         values = []
         adressses = []
         for i in range(0, amount_words):
-            v, target_adr = self.__examine_single_word(adr, i)
+            target_adr, v = self.__examine_single_word(adr, i)
             values.append(v)
             adressses.append(target_adr)
         if len(values) == 1:
@@ -159,12 +190,38 @@ class Debugger:
             adr_value_map[adressses[i]] = values[i]
         return adr_value_map
 
+    def examine_instructions(self, adr, amount_instructions):
+        values = []
+        adressses = []
+        s_adr = hex(adr)
+        s_instructions = self.execute("x/"+str(amount_instructions)+"i"+s_adr)
+        instruction_lines = s_instructions.split("\n")
+        # last line is always emtpy
+        instruction_lines.pop()
+        for line in instruction_lines:
+            # sometimes there is an arrow before the adr
+            log.debug(f"examining instructionline: {line}")
+            # valid_line = line.find("0x")
+            # if valid_line == -1:
+            #     log.warn(f"skipping line: {line}, bc does not contain adr")
+            #     continue
+            line = line[line.index("0x"):]
+            splitted = line.split(":", 1)
+            adr = int(splitted[0].strip(), 16)
+            instruction = splitted[1].strip()
+            adressses.append(adr)
+            values.append(instruction)
+        adr_value_map = {}
+        for i in range(len(adressses)):
+            adr_value_map[adressses[i]] = values[i]
+        return adr_value_map
+
     # see examine, force reading 32 bit words
     def examine32(self, adr, amount_words=1):
         values = []
         adressses = []
         for i in range(0, amount_words):
-            v, target_adr = self.__examine_single_word(adr, i, force_32_bit=True)
+            target_adr, v = self.__examine_single_word(adr, i, force_32_bit=True)
             values.append(v)
             adressses.append(target_adr)
         if len(values) == 1:
